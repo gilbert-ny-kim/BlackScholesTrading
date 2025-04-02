@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <mysql.h>
 #include <math.h>
 #include <time.h>
 
@@ -25,15 +26,36 @@ int main() {
     double path[DAYS];
 
     brownian_motion(S, mu, sigma, dt, path);
- 
-    FILE *file = fopen("txt/brownian_motion.txt", "w");  // brownian_motion.txt
-    for (int i = 0; i < DAYS; i++) {
-        fprintf(file, "%d %.5f\n", i, path[i]);
+
+    // === MySQL Setup ===
+    MYSQL *conn = mysql_init(NULL);
+    if (conn == NULL) {
+        fprintf(stderr, "mysql_init() failed\n");
+        return EXIT_FAILURE;
     }
 
-    fclose(file);
+    if (mysql_real_connect(conn, "localhost", "gilbertnykim", "wnsdn08@Lotte",
+                           "BlackScholesTrading", 0, NULL, 0) == NULL) {
+        fprintf(stderr, "mysql_real_connect() failed\nError: %s\n", mysql_error(conn));
+        mysql_close(conn);
+        return EXIT_FAILURE;
+    }
 
-    printf("GBM simulation completed. Data saved to brownian_motion.txt\n");
+    // Insert data (day, price) into the database
+    char query[256];
+    for (int i = 0; i < DAYS; i++) {
+        snprintf(query, sizeof(query),
+                 "INSERT INTO stock_path (day, price) VALUES (%d, %.5f);",
+                 i, path[i]);
+
+        if (mysql_query(conn, query)) {
+            fprintf(stderr, "INSERT failed at day %d: %s\n", i, mysql_error(conn));
+        }
+    }
+
+    mysql_close(conn);
+
+    printf("GBM simulation completed. Data saved to MySQL.\n");
 
     return 0;
 }
