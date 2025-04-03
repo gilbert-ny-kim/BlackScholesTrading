@@ -41,6 +41,13 @@ int main() {
         return EXIT_FAILURE;
     }
 
+    // Clear table before insert
+    if (mysql_query(conn, "DELETE FROM stock_path")) {
+        fprintf(stderr, "Failed to clear table: %s\n", mysql_error(conn));
+        mysql_close(conn);
+        return EXIT_FAILURE;
+    }
+
     // Insert data (day, price) into the database
     char query[256];
     for (int i = 0; i < DAYS; i++) {
