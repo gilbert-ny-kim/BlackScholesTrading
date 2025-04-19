@@ -9,75 +9,86 @@
 
 
 // Function prototypes
-double ln(float x);
-double sqr(float x);
+double ln(double x);
+double sqr(double x);
 double cdf(double x);
 double black_scholes_call(float S, float K, float sigma, float r, float t);
 double brownian_motion(double S, double mu, double sigma, double dt, double path[]);
 double box_muller();
 
 int main() {
-    srand(time(NULL));  // Seed random number generator
-    
-    double S = 100;
-    double mu = 0.05;
-    double sigma = 0.3;
-    double dt = 1.0 / 252;
-    double path[DAYS];
+    // === Simulation Parameters ===
+    const double S0 = 100.0;      // Initial stock price
+    const double mu = 0.05;       // Expected return
+    const double sigma = 0.3;     // Volatility
+    const double dt = 1.0 / DAYS; // Time step (1 trading day)
+    double path[DAYS];            // Array to store simulated path
 
-    brownian_motion(S, mu, sigma, dt, path);
+    // === Random Seed Setup ===
+    srand(time(NULL));      // Seed random number generator
 
-    // === MySQL Setup ===
+    // === Generate GBM Path ===
+    brownian_motion(S0, mu, sigma, dt, path);
+
+    // === Black-Scholes Pricing ===
+    const double K = 100.0;   // Strike price
+    const double r = 0.03;    // Risk-free interest rate
+    const double T = 1.0;     // Time to maturity (1 year)
+
+    double call_price = black_scholes_call(S0, K, sigma, r, T);
+    printf("Black-Scholes Call Option Price: %.5f\n", call_price);
+
+    // === MySQL Connection ===
     MYSQL *conn = mysql_init(NULL);
-    if (conn == NULL) {
-        fprintf(stderr, "mysql_init() failed\n");
+    if (!conn || !mysql_real_connect(conn, "localhost", "gilbertnykim", "wnsdn08@Lotte",
+                                     "BlackScholesTrading", 0, NULL, 0)) {
+        fprintf(stderr, "MySQL connection failed: %s\n", mysql_error(conn));
+        if (conn) mysql_close(conn);
         return EXIT_FAILURE;
     }
 
-    if (mysql_real_connect(conn, "localhost", "gilbertnykim", "wnsdn08@Lotte",
-                           "BlackScholesTrading", 0, NULL, 0) == NULL) {
-        fprintf(stderr, "mysql_real_connect() failed\nError: %s\n", mysql_error(conn));
-        mysql_close(conn);
-        return EXIT_FAILURE;
-    }
-
-    // Clear table before insert
+    // === Clear Table ===
     if (mysql_query(conn, "DELETE FROM stock_path")) {
         fprintf(stderr, "Failed to clear table: %s\n", mysql_error(conn));
         mysql_close(conn);
         return EXIT_FAILURE;
     }
 
-    // Insert data (day, price) into the database
+    // === Insert Path Data ===
     char query[256];
     for (int i = 0; i < DAYS; i++) {
         snprintf(query, sizeof(query),
-                 "INSERT INTO stock_path (day, price) VALUES (%d, %.5f);",
-                 i, path[i]);
+                 "INSERT INTO stock_path (day, price) VALUES (%d, %.5f);", i, path[i]);
 
         if (mysql_query(conn, query)) {
-            fprintf(stderr, "INSERT failed at day %d: %s\n", i, mysql_error(conn));
+            fprintf(stderr, "INSERT failed (day %d): %s\n", i, mysql_error(conn));
         }
     }
 
     mysql_close(conn);
 
-    printf("GBM simulation completed. Data saved to MySQL.\n");
-
     return 0;
 }
 
 // Simple math function
-double ln(float x) {
+double ln(double x) {
     return log(x);
 }
 
-double sqr(float x) {
+double sqr(double x) {
     return x * x;
 }
 
 double cdf(double x) {
     return 0.5 * (1 + erf(x * M_SQRT1_2));
+}
+
+// Box-Muller Transform
+double box_muller() {
+    double U1 = (double)rand() / RAND_MAX;  // Uniform (0,1]
+    double U2 = (double)rand() / RAND_MAX;
+
+    return sqrt(-2.0 * log(U1)) * cos(2.0 * M_PI * U2);  // Z ~ N(0,1)
 }
 
 // Black-Scholes Model
@@ -104,7 +115,7 @@ double black_scholes_call(float S, float K, float sigma, float r, float t) {
 double brownian_motion(double S, double mu, double sigma, double dt, double path[]) {
     path[0] = S;
     
-    for (int i = 0; i < DAYS; i++) {
+    for (int i = 1; i < DAYS; i++) {
         double Z = box_muller(); // Generate a standard normal random variable
         double dW = sqrt(dt) * Z;
 
@@ -114,12 +125,4 @@ double brownian_motion(double S, double mu, double sigma, double dt, double path
     }
     
     return S;
-}
-
-// Box-Muller Transform
-double box_muller() {
-    double U1 = (double)rand() / RAND_MAX;  // Uniform (0,1]
-    double U2 = (double)rand() / RAND_MAX;
-
-    return sqrt(-2.0 * log(U1)) * cos(2.0 * M_PI * U2);  // Z ~ N(0,1)
 }
